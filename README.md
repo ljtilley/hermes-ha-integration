@@ -5,6 +5,13 @@
 
 A [Home Assistant](https://home-assistant.io/) custom integration that connects [Hermes Agent](https://hermes-agent.nousresearch.com/) by [Nous Research](https://nousresearch.com/) as a **conversation agent** for voice assistants and the conversation panel.
 
+> **Fork notice (`1.1.0-eric.1`)** — this fork bundles three open upstream PRs that fix common voice-pipeline issues in `1.0.0`:
+> - [#3](https://github.com/WolframRavenwolf/hermes-ha-integration/pull/3) Refactor Hermes into a `ConversationEntity` (modern HA voice pipeline + streaming chat log)
+> - [#1](https://github.com/WolframRavenwolf/hermes-ha-integration/pull/1) Auto follow-up after questions (HA keeps listening when Hermes ends in `?`)
+> - [#4](https://github.com/WolframRavenwolf/hermes-ha-integration/pull/4) Hide tool traces in responses (no more spoken `🔧 calling tool...`)
+>
+> [#2](https://github.com/WolframRavenwolf/hermes-ha-integration/pull/2) (Hermes server-side session reuse) is intentionally **not** in this build — it needs careful integration with PR #3's entity refactor and is planned for a follow-up release.
+
 ## Features
 
 - **Conversation agent** — use Hermes Agent as your voice assistant in Home Assistant
