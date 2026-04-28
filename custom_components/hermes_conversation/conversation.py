@@ -44,6 +44,11 @@ from .const import (
     DEFAULT_PROMPT,
     DOMAIN,
 )
+from .tool_trace_filter import (
+    append_tool_trace_prompt,
+    sanitize_response_text,
+    should_hide_tool_traces,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_CACHED_CONVERSATIONS = 50
@@ -158,18 +163,22 @@ class HermesConversationEntity(
         system_prompt = self._build_system_prompt(options, user_input, user_name)
         messages = self._build_messages_from_chat_log(chat_log, system_prompt)
 
+        hide_traces = should_hide_tool_traces(options)
         response_text = ""
 
         try:
-            async for content in chat_log.async_add_delta_content_stream(
-                self.entity_id or self.entry.entry_id,
-                self._async_stream_assistant_response(messages),
-            ):
-                if (
-                    getattr(content, "role", None) == "assistant"
-                    and getattr(content, "content", None) is not None
+            if hide_traces:
+                response_text = await self._get_full_response(messages)
+            else:
+                async for content in chat_log.async_add_delta_content_stream(
+                    self.entity_id or self.entry.entry_id,
+                    self._async_stream_assistant_response(messages),
                 ):
-                    response_text += content.content
+                    if (
+                        getattr(content, "role", None) == "assistant"
+                        and getattr(content, "content", None) is not None
+                    ):
+                        response_text += content.content
         except HermesApiError as err:
             _LOGGER.error("Hermes API error: %s", err)
             intent_response = intent.IntentResponse(language=user_input.language)
@@ -181,6 +190,9 @@ class HermesConversationEntity(
                 intent_response,
                 chat_log.conversation_id,
             )
+
+        if hide_traces:
+            response_text = sanitize_response_text(response_text)
 
         intent_response = intent.IntentResponse(language=user_input.language)
         intent_response.async_set_speech(response_text)
@@ -209,7 +221,10 @@ class HermesConversationEntity(
         messages.append({"role": "user", "content": user_input.text})
 
         try:
-            response_text = await self._get_response(messages)
+            if should_hide_tool_traces(options):
+                response_text = await self._get_full_response(messages)
+            else:
+                response_text = await self._get_response(messages)
         except HermesApiError as err:
             _LOGGER.error("Hermes API error: %s", err)
             intent_response = intent.IntentResponse(language=user_input.language)
@@ -221,6 +236,9 @@ class HermesConversationEntity(
                 intent_response,
                 conv_id,
             )
+
+        if should_hide_tool_traces(options):
+            response_text = sanitize_response_text(response_text)
 
         history.append({"role": "user", "content": user_input.text})
         history.append({"role": "assistant", "content": response_text})
@@ -295,6 +313,13 @@ class HermesConversationEntity(
 
         return await self.client.async_send_message(messages)
 
+    async def _get_full_response(
+        self,
+        messages: list[dict[str, str]],
+    ) -> str:
+        """Get a complete response from the API without streaming."""
+        return await self.client.async_send_message(messages)
+
     def _build_messages_from_chat_log(
         self,
         chat_log: ChatLog,
@@ -344,25 +369,6 @@ class HermesConversationEntity(
         while len(self._history) > _MAX_CACHED_CONVERSATIONS:
             self._history.popitem(last=False)
 
-    def _build_system_prompt(
-        self,
-        options: dict[str, Any],
-        user_input: ConversationInput,
-        user_name: str,
-    ) -> str:
-        """Build the system prompt, including pipeline-provided extra instructions."""
-        system_prompt = self._render_system_prompt(options, user_name)
-
-        extra_system_prompt = getattr(user_input, "extra_system_prompt", None)
-        if extra_system_prompt:
-            return (
-                f"{system_prompt}\n\n{extra_system_prompt}"
-                if system_prompt
-                else extra_system_prompt
-            )
-
-        return system_prompt
-
     async def _get_user_name(self, user_input: ConversationInput) -> str:
         """Resolve the display name of the user from HA auth."""
         try:
@@ -379,8 +385,27 @@ class HermesConversationEntity(
             _LOGGER.debug("Could not resolve username", exc_info=True)
         return "the user"
 
+    def _build_system_prompt(
+        self,
+        options: dict[str, Any],
+        user_input: ConversationInput,
+        user_name: str,
+    ) -> str:
+        """Build the full system prompt, including pipeline-provided extra instructions."""
+        system_prompt = self._render_system_prompt(options, user_name)
+
+        extra_system_prompt = getattr(user_input, "extra_system_prompt", None)
+        if extra_system_prompt:
+            system_prompt = (
+                f"{system_prompt}\n\n{extra_system_prompt}"
+                if system_prompt
+                else extra_system_prompt
+            )
+
+        return append_tool_trace_prompt(options, system_prompt)
+
     def _render_system_prompt(self, options: dict[str, Any], user_name: str) -> str:
-        """Render the system prompt template with HA context."""
+        """Render the configured system prompt template with HA context."""
         prompt_template = options.get(CONF_PROMPT, DEFAULT_PROMPT)
         if not prompt_template:
             return self._append_auto_follow_up_prompt(options, "")

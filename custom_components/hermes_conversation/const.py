@@ -18,6 +18,7 @@ CONF_PROMPT = "prompt"
 CONF_INCLUDE_EXPOSED_ENTITIES = "include_exposed_entities"
 CONF_CONTEXT_MAX_CHARS = "context_max_chars"
 CONF_AUTO_FOLLOW_UP = "auto_follow_up"
+CONF_HIDE_TOOL_TRACES = "hide_tool_traces"
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -27,6 +28,7 @@ DEFAULT_PORT = 8443
 DEFAULT_CONTEXT_MAX_CHARS = 12000
 DEFAULT_INCLUDE_EXPOSED_ENTITIES = False
 DEFAULT_AUTO_FOLLOW_UP = False
+DEFAULT_HIDE_TOOL_TRACES = False
 DEFAULT_TIMEOUT = 120
 DEFAULT_STREAM_TIMEOUT = 300
 DEFAULT_MAX_HISTORY_MESSAGES = 100

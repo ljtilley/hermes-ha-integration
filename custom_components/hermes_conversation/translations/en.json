@@ -34,10 +34,12 @@
           "prompt": "System Prompt",
           "include_exposed_entities": "Include exposed entities in prompt",
           "context_max_chars": "Max context characters",
-          "auto_follow_up": "Auto follow-up after questions"
+          "auto_follow_up": "Auto follow-up after questions",
+          "hide_tool_traces": "Hide tool traces in responses"
         },
         "data_description": {
-          "auto_follow_up": "Keeps the voice assistant listening in the same conversation when Hermes ends with a question, including short clarifications after it. Hermes is also prompted to keep follow-up questions short and as the final sentence."
+          "auto_follow_up": "Keeps the voice assistant listening in the same conversation when Hermes ends with a question, including short clarifications after it. Hermes is also prompted to keep follow-up questions short and as the final sentence.",
+          "hide_tool_traces": "Removes internal tool or shell command traces from displayed and spoken responses. When enabled, Hermes is also prompted not to expose them."
         }
       }
     }

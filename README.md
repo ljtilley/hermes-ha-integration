@@ -72,8 +72,11 @@ After setup, all settings can be changed via **Settings â†’ Devices & Services â
 | Include exposed entities | No                  | Include smart home device states in the system prompt          |
 | Max context characters   | 12000               | Character limit for the entity context block                   |
 | Auto follow-up after questions | No           | Re-open the voice assistant when the reply ends in a question, including short clarifications after it. Hermes is also nudged to keep follow-up questions short and last |
+| Hide tool traces in responses | No            | Remove internal tool or shell command traces from displayed and spoken answers |
 
 The default system prompt includes the current date/time, timezone, the user's name, the home name, and exposed device states (if enabled). Entity exposure is off by default since Hermes Agent can access Home Assistant entities directly when a Home Assistant token is configured in the Hermes Agent add-on.
+
+When `Hide tool traces in responses` is enabled, the integration sanitizes the final text after receiving the complete response. This can slightly increase first-token latency compared with the default streaming path.
 
 ## How It Works
 
