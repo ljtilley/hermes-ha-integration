@@ -33,9 +33,11 @@ except ImportError:  # pragma: no cover - compatibility with older Home Assistan
 
 from .api import HermesApiClient, HermesApiError
 from .const import (
+    CONF_AUTO_FOLLOW_UP,
     CONF_CONTEXT_MAX_CHARS,
     CONF_INCLUDE_EXPOSED_ENTITIES,
     CONF_PROMPT,
+    DEFAULT_AUTO_FOLLOW_UP,
     DEFAULT_CONTEXT_MAX_CHARS,
     DEFAULT_INCLUDE_EXPOSED_ENTITIES,
     DEFAULT_MAX_HISTORY_MESSAGES,
@@ -47,6 +49,17 @@ _LOGGER = logging.getLogger(__name__)
 _MAX_CACHED_CONVERSATIONS = 50
 _HAS_CHAT_LOG_API = (
     async_get_chat_log is not None and async_get_chat_session is not None
+)
+_QUESTION_MARKERS = ("?", "？")
+_TRAILING_FOLLOW_UP_MAX_CHARS = 120
+_TRAILING_FOLLOW_UP_MAX_WORDS = 20
+_TRAILING_FOLLOW_UP_MAX_SENTENCE_ENDERS = 1
+_TRAILING_SENTENCE_ENDERS = ".!！;；"
+_TRAILING_CLOSERS = "\"'”’)]}»"
+_AUTO_FOLLOW_UP_PROMPT = (
+    "When voice auto follow-up is active and you want the user to reply, "
+    "give any needed answer first and end with one short, direct question as "
+    "the final sentence. Do not add any words after the question mark."
 )
 
 
@@ -171,10 +184,14 @@ class HermesConversationEntity(
 
         intent_response = intent.IntentResponse(language=user_input.language)
         intent_response.async_set_speech(response_text)
+        continue_conversation = self._should_continue_conversation(
+            options, response_text
+        )
 
         return self._build_conversation_result(
             intent_response,
             chat_log.conversation_id,
+            continue_conversation=continue_conversation,
         )
 
     async def _async_process_legacy(
@@ -212,8 +229,15 @@ class HermesConversationEntity(
 
         intent_response = intent.IntentResponse(language=user_input.language)
         intent_response.async_set_speech(response_text)
+        continue_conversation = self._should_continue_conversation(
+            options, response_text
+        )
 
-        return self._build_conversation_result(intent_response, conv_id)
+        return self._build_conversation_result(
+            intent_response,
+            conv_id,
+            continue_conversation=continue_conversation,
+        )
 
     async def _async_stream_assistant_response(
         self,
@@ -359,7 +383,7 @@ class HermesConversationEntity(
         """Render the system prompt template with HA context."""
         prompt_template = options.get(CONF_PROMPT, DEFAULT_PROMPT)
         if not prompt_template:
-            return ""
+            return self._append_auto_follow_up_prompt(options, "")
 
         variables: dict[str, Any] = {
             "ha_name": self.hass.config.location_name,
@@ -381,7 +405,21 @@ class HermesConversationEntity(
             _LOGGER.warning("System prompt template error: %s", err)
             rendered_prompt = prompt_template
 
-        return rendered_prompt
+        return self._append_auto_follow_up_prompt(options, rendered_prompt)
+
+    def _append_auto_follow_up_prompt(
+        self,
+        options: dict[str, Any],
+        system_prompt: str,
+    ) -> str:
+        """Append extra guidance that makes spoken follow-up turns cleaner."""
+        if not options.get(CONF_AUTO_FOLLOW_UP, DEFAULT_AUTO_FOLLOW_UP):
+            return system_prompt
+
+        if system_prompt:
+            return f"{system_prompt}\n\n{_AUTO_FOLLOW_UP_PROMPT}"
+
+        return _AUTO_FOLLOW_UP_PROMPT
 
     def _get_exposed_entities(
         self, options: dict[str, Any]
@@ -419,13 +457,55 @@ class HermesConversationEntity(
 
         return entities
 
+    def _should_continue_conversation(
+        self, options: dict[str, Any], response_text: str
+    ) -> bool:
+        """Return whether the voice pipeline should keep listening."""
+        if not options.get(CONF_AUTO_FOLLOW_UP, DEFAULT_AUTO_FOLLOW_UP):
+            return False
+
+        stripped_text = response_text.strip().rstrip(_TRAILING_CLOSERS)
+        if not stripped_text:
+            return False
+
+        if stripped_text.endswith(_QUESTION_MARKERS):
+            return True
+
+        last_question_pos = max(stripped_text.rfind(marker) for marker in _QUESTION_MARKERS)
+        if last_question_pos == -1:
+            return False
+
+        trailing_text = stripped_text[last_question_pos + 1 :].strip()
+        if not trailing_text:
+            return True
+
+        trailing_words = trailing_text.split()
+        trailing_sentence_enders = sum(
+            trailing_text.count(marker) for marker in _TRAILING_SENTENCE_ENDERS
+        )
+
+        return (
+            len(trailing_text) <= _TRAILING_FOLLOW_UP_MAX_CHARS
+            and len(trailing_words) <= _TRAILING_FOLLOW_UP_MAX_WORDS
+            and trailing_sentence_enders <= _TRAILING_FOLLOW_UP_MAX_SENTENCE_ENDERS
+        )
+
     def _build_conversation_result(
         self,
         intent_response: intent.IntentResponse,
         conversation_id: str,
+        *,
+        continue_conversation: bool = False,
     ) -> ConversationResult:
-        """Build a conversation result."""
-        return ConversationResult(
-            response=intent_response,
-            conversation_id=conversation_id,
-        )
+        """Build a conversation result, preserving compatibility with older HA."""
+        try:
+            return ConversationResult(
+                response=intent_response,
+                conversation_id=conversation_id,
+                continue_conversation=continue_conversation,
+            )
+        except TypeError:
+            return ConversationResult(
+                response=intent_response,
+                conversation_id=conversation_id,
+            )
