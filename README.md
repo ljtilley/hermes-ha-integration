@@ -5,12 +5,11 @@
 
 A [Home Assistant](https://home-assistant.io/) custom integration that connects [Hermes Agent](https://hermes-agent.nousresearch.com/) by [Nous Research](https://nousresearch.com/) as a **conversation agent** for voice assistants and the conversation panel.
 
-> **Fork notice (`1.1.0-eric.1`)** — this fork bundles three open upstream PRs that fix common voice-pipeline issues in `1.0.0`:
+> **Fork notice (`1.2.0-eric.1`)** — this fork bundles all four open upstream PRs that fix common voice-pipeline issues in `1.0.0`:
 > - [#3](https://github.com/WolframRavenwolf/hermes-ha-integration/pull/3) Refactor Hermes into a `ConversationEntity` (modern HA voice pipeline + streaming chat log)
 > - [#1](https://github.com/WolframRavenwolf/hermes-ha-integration/pull/1) Auto follow-up after questions (HA keeps listening when Hermes ends in `?`)
 > - [#4](https://github.com/WolframRavenwolf/hermes-ha-integration/pull/4) Hide tool traces in responses (no more spoken `🔧 calling tool...`)
->
-> [#2](https://github.com/WolframRavenwolf/hermes-ha-integration/pull/2) (Hermes server-side session reuse) is intentionally **not** in this build — it needs careful integration with PR #3's entity refactor and is planned for a follow-up release.
+> - [#2](https://github.com/WolframRavenwolf/hermes-ha-integration/pull/2) Hermes server-side session reuse (context survives wake-word re-engagement) — integrated on top of PR #3's entity, with the Devin-flagged history bug fixed (raw response stored in history, sanitized text only used for TTS).
 
 ## Features
 
@@ -80,6 +79,13 @@ After setup, all settings can be changed via **Settings → Devices & Services �
 | Max context characters   | 12000               | Character limit for the entity context block                   |
 | Auto follow-up after questions | No           | Re-open the voice assistant when the reply ends in a question, including short clarifications after it. Hermes is also nudged to keep follow-up questions short and last |
 | Hide tool traces in responses | No            | Remove internal tool or shell command traces from displayed and spoken answers |
+| Keep HA listening for follow-ups | No          | HA continued-conversation mode — keep the satellite listening regardless of how Hermes ended the turn |
+| Reuse Hermes server sessions   | Yes           | Carry the Hermes-side session id across short voice turns so context survives wake-word re-engagement |
+| Voice session reuse timeout (s) | 900          | Idle seconds before a remembered voice session expires. `0` disables expiry |
+| Include device/satellite context | Yes         | Append the voice device's id/area/satellite metadata to the prompt so Hermes knows where the request came from |
+| Always speak replies through fallback | No      | Also send the reply to the fallback media player / TTS entity below — useful for satellites that can't speak the response themselves |
+| Fallback media player entity_id | (empty)      | e.g. `media_player.living_room_speaker` |
+| Fallback TTS entity_id          | (empty)      | e.g. `tts.cloud` or `tts.piper`. Leave empty for the default |
 
 The default system prompt includes the current date/time, timezone, the user's name, the home name, and exposed device states (if enabled). Entity exposure is off by default since Hermes Agent can access Home Assistant entities directly when a Home Assistant token is configured in the Hermes Agent add-on.
 

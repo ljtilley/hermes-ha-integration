@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -10,7 +11,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import HermesApiClient
-from .const import CONF_API_KEY, CONF_HOST, CONF_PORT, CONF_USE_SSL, CONF_VERIFY_SSL, DOMAIN
+from .compat import entry_value, resolve_connection_config
+from .const import DEFAULT_TIMEOUT, DOMAIN, LEGACY_CONF_MODEL, LEGACY_CONF_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 _PLATFORMS: tuple[Platform, ...] = (Platform.CONVERSATION,)
@@ -20,18 +22,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Hermes Conversation from a config entry."""
     session = async_get_clientsession(hass)
 
+    connection = resolve_connection_config(entry)
     client = HermesApiClient(
         session=session,
-        host=entry.data[CONF_HOST],
-        port=entry.data[CONF_PORT],
-        api_key=entry.data.get(CONF_API_KEY) or None,
-        use_ssl=entry.data.get(CONF_USE_SSL, True),
-        verify_ssl=entry.data.get(CONF_VERIFY_SSL, False),
+        host=connection.host,
+        port=connection.port,
+        api_key=connection.api_key,
+        use_ssl=connection.use_ssl,
+        verify_ssl=connection.verify_ssl,
+        model=entry_value(entry, LEGACY_CONF_MODEL, None),
+        request_timeout=entry_value(entry, LEGACY_CONF_TIMEOUT, DEFAULT_TIMEOUT),
     )
 
     hass.data.setdefault(DOMAIN, {})
+    session_map: dict[str, dict[str, Any]] = {}
     hass.data[DOMAIN][entry.entry_id] = {
         "client": client,
+        "sessions": session_map,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, _PLATFORMS)

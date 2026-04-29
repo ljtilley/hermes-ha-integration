@@ -35,11 +35,25 @@
           "include_exposed_entities": "Include exposed entities in prompt",
           "context_max_chars": "Max context characters",
           "auto_follow_up": "Auto follow-up after questions",
-          "hide_tool_traces": "Hide tool traces in responses"
+          "hide_tool_traces": "Hide tool traces in responses",
+          "enable_continued_conversation": "Keep Home Assistant listening for follow-ups",
+          "enable_session_reuse": "Reuse Hermes server sessions across short voice turns",
+          "session_timeout_seconds": "Voice session reuse timeout (seconds)",
+          "expose_device_context": "Include device/satellite context in prompt",
+          "always_speak_fallback": "Always speak replies through fallback TTS",
+          "fallback_media_player": "Fallback media player entity_id",
+          "fallback_tts_engine": "Fallback TTS entity_id"
         },
         "data_description": {
           "auto_follow_up": "Keeps the voice assistant listening in the same conversation when Hermes ends with a question, including short clarifications after it. Hermes is also prompted to keep follow-up questions short and as the final sentence.",
-          "hide_tool_traces": "Removes internal tool or shell command traces from displayed and spoken responses. When enabled, Hermes is also prompted not to expose them."
+          "hide_tool_traces": "Removes internal tool or shell command traces from displayed and spoken responses. When enabled, Hermes is also prompted not to expose them.",
+          "enable_continued_conversation": "Always continue the conversation after a turn so Home Assistant keeps listening, regardless of whether Hermes ended with a question.",
+          "enable_session_reuse": "Carry the Hermes server-side session across short voice turns so context survives wake-word re-engagement (uses X-Hermes-Session-Id).",
+          "session_timeout_seconds": "Idle timeout before a remembered voice session expires. 0 disables expiry.",
+          "expose_device_context": "Append the voice device's id, area, and satellite metadata to the system prompt so Hermes knows where the request came from.",
+          "always_speak_fallback": "Also speak replies through the fallback media player / TTS entity below, useful if the satellite device can't speak the response itself.",
+          "fallback_media_player": "Media player entity_id used when always_speak_fallback is on (e.g. media_player.living_room_speaker).",
+          "fallback_tts_engine": "TTS entity_id used when always_speak_fallback is on (e.g. tts.cloud or tts.piper). Leave empty to use the default."
         }
       }
     }
