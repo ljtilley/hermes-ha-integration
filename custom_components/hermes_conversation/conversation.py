@@ -131,7 +131,7 @@ class HermesConversationEntity(
 ):
     """Hermes Agent conversation entity for Home Assistant."""
 
-    _attr_supports_streaming = True
+    _attr_supports_streaming = False
 
     def __init__(
         self,
@@ -224,14 +224,14 @@ class HermesConversationEntity(
             self._get_active_session_id(session_key) if session_key else None
         )
 
-        # Streaming is bypassed only when we need the full text upfront for
-        # post-processing: tool-trace filtering or fallback TTS dispatch.
-        # Session reuse is orthogonal — the API client tracks the session id
-        # from response headers whether the body is streamed or not.
-        use_streaming = not (
-            should_hide_tool_traces(options)
-            or self._always_speak_fallback_enabled()
-        )
+        # Hermes Agent's /v1/chat/completions accepts stream=true and emits the
+        # OpenAI-style role preamble, but never delivers content deltas — the
+        # full response only flushes after the agent loop completes (at which
+        # point our socket-read timeout has already fired and we re-issue as
+        # non-streaming, doubling the wait). The Hermes docs only document
+        # streaming for CLI and messaging gateways, not the API. So: always
+        # non-streaming. Revisit if Hermes ships real API streaming.
+        use_streaming = False
 
         response_text = ""
         try:
@@ -310,10 +310,7 @@ class HermesConversationEntity(
             messages.append({"role": "user", "content": user_input.text})
 
         try:
-            if should_hide_tool_traces(options):
-                response_text = await self._get_full_response(messages, session_id)
-            else:
-                response_text = await self._get_response(messages, session_id)
+            response_text = await self._get_full_response(messages, session_id)
         except HermesApiError as err:
             _LOGGER.error("Hermes API error: %s", err)
             intent_response = intent.IntentResponse(language=user_input.language)
