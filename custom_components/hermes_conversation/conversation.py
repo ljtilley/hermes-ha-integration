@@ -224,12 +224,12 @@ class HermesConversationEntity(
             self._get_active_session_id(session_key) if session_key else None
         )
 
-        # Streaming is bypassed when we need the full text upfront for
-        # post-processing: tool-trace filtering, session-reuse (avoid
-        # intermediate tool-progress deltas in voice), or fallback TTS dispatch.
+        # Streaming is bypassed only when we need the full text upfront for
+        # post-processing: tool-trace filtering or fallback TTS dispatch.
+        # Session reuse is orthogonal — the API client tracks the session id
+        # from response headers whether the body is streamed or not.
         use_streaming = not (
             should_hide_tool_traces(options)
-            or session_reuse
             or self._always_speak_fallback_enabled()
         )
 
@@ -310,7 +310,7 @@ class HermesConversationEntity(
             messages.append({"role": "user", "content": user_input.text})
 
         try:
-            if should_hide_tool_traces(options) or session_reuse:
+            if should_hide_tool_traces(options):
                 response_text = await self._get_full_response(messages, session_id)
             else:
                 response_text = await self._get_response(messages, session_id)
