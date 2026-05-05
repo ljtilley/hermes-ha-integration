@@ -22,6 +22,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import intent, template
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -795,7 +796,45 @@ class HermesConversationEntity(
             area = area_reg.async_get_area(device.area_id)
             if area:
                 lines.append(f"Origin area: {area.name}")
+                area_entities = self._area_exposed_entities(device.area_id)
+                if area_entities:
+                    lines.append("Exposed entities in this area:")
+                    lines.extend(f"  {line}" for line in area_entities)
         return lines
+
+    def _area_exposed_entities(self, area_id: str) -> list[str]:
+        """List exposed conversation entities in the given area, with state."""
+        ent_reg = er.async_get(self.hass)
+        device_reg = dr.async_get(self.hass)
+        max_entities = 40
+
+        seen: set[str] = set()
+        results: list[str] = []
+        for entry in ent_reg.entities.values():
+            if entry.entity_id in seen:
+                continue
+            in_area = entry.area_id == area_id
+            if not in_area and entry.device_id:
+                device = device_reg.async_get(entry.device_id)
+                if device and device.area_id == area_id:
+                    in_area = True
+            if not in_area:
+                continue
+            if not async_should_expose(self.hass, "conversation", entry.entity_id):
+                continue
+
+            state = self.hass.states.get(entry.entity_id)
+            if state is None:
+                continue
+
+            friendly = state.attributes.get("friendly_name") or entry.name or entry.entity_id
+            results.append(f"- {entry.entity_id} ({friendly}): {state.state}")
+            seen.add(entry.entity_id)
+            if len(results) >= max_entities:
+                break
+
+        results.sort()
+        return results
 
     def _describe_satellite(self, satellite_id: str) -> list[str]:
         state = (
