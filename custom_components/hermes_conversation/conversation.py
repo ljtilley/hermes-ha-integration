@@ -361,51 +361,9 @@ class HermesConversationEntity(
         messages: list[dict[str, str]],
         session_id: str | None = None,
     ) -> AsyncIterator[dict[str, str]]:
-        """Yield sentence-buffered assistant deltas for Home Assistant's chat log.
-
-        Accumulates streaming tokens into a buffer and flushes complete sentences
-        to HA's voice pipeline, rather than yielding every raw token delta. This
-        prevents the HA pipeline from calling TTS (Edge, etc.) for tiny word
-        fragments that get cut off when the next delta arrives.
-        """
+        """Yield assistant deltas for Home Assistant's chat log."""
         sent_role = False
         received_delta = False
-        buffer = ""
-
-        # Sentence-ending patterns — checked after each delta append.
-        # The pair form (". ", "! ", ...) catches natural sentence breaks
-        # while avoiding false hits on "Dr.", "e.g.", etc.
-        _SENTENCE_ENDS = (
-            ". ", "! ", "? ",
-            ".\n", "!\n", "?\n",
-            "\n\n",
-        )
-
-        def _flush_buffer(buf: str) -> tuple[str, str]:
-            """Extract complete sentences from the front of the buffer.
-
-            Returns (flushed_text, remaining_buffer).
-            Flushed text may contain multiple sentences concatenated.
-            """
-            flushed_parts: list[str] = []
-            remaining = buf
-            while True:
-                earliest_pos = -1
-                earliest_end = ""
-                for end in _SENTENCE_ENDS:
-                    pos = remaining.find(end)
-                    if pos != -1 and (earliest_pos == -1 or pos < earliest_pos):
-                        earliest_pos = pos
-                        earliest_end = end
-                if earliest_pos == -1:
-                    break
-                # Include the end marker
-                chunk = remaining[:earliest_pos + len(earliest_end)]
-                flushed_parts.append(chunk)
-                remaining = remaining[earliest_pos + len(earliest_end):]
-
-            flushed = "".join(flushed_parts)
-            return flushed, remaining
 
         try:
             async for delta in self.client.async_stream_message(
@@ -417,16 +375,9 @@ class HermesConversationEntity(
                     yield {"role": "assistant"}
                     sent_role = True
                 received_delta = True
-
-                buffer += delta
-                flushed, buffer = _flush_buffer(buffer)
-                if flushed:
-                    yield {"content": flushed}
-
+                yield {"content": delta}
         except HermesApiError as err:
             if received_delta:
-                if buffer.strip():
-                    yield {"content": buffer}
                 _LOGGER.warning(
                     "Streaming interrupted after partial response, keeping partial text: %s",
                     err,
@@ -439,8 +390,6 @@ class HermesConversationEntity(
             )
 
         if received_delta:
-            if buffer.strip():
-                yield {"content": buffer}
             return
 
         result = await self.client.async_send_message(
