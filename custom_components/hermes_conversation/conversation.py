@@ -356,14 +356,68 @@ class HermesConversationEntity(
             continue_conversation=continue_conversation,
         )
 
+    # Sentence-ending patterns checked after each delta append.
+    # Ordered from strongest to weakest to avoid false splits.
+    _SENTENCE_ENDS: tuple[tuple[str, ...], ...] = (
+        (". ", "! ", "? "),           # Period/exclaim/question + space
+        (".\n", "!\n", "?\n"),         # Period/exclaim/question + newline
+        ("... ", "...\n"),             # Ellipsis
+        (": ", ":\n"),                # Colon (precedes list/explanation)
+        (";\n",),                      # Semicolon + newline (list items)
+    )
+    _MAX_BUFFER_CHARS: int = 200       # Flush if no sentence end after this many chars
+
+    @staticmethod
+    def _extract_first_sentence(buffer: str) -> tuple[str, str]:
+        """Extract the first complete sentence from the buffer.
+
+        Returns (sentence, remaining_buffer).  If no sentence end is found
+        and the buffer is under MAX_BUFFER_CHARS, returns ("", buffer).
+        If the buffer exceeds MAX_BUFFER_CHARS, flushes the whole buffer
+        as one chunk.
+        """
+        # Max-buffer guard: flush everything if we hit the limit
+        if len(buffer) >= HermesConversationEntity._MAX_BUFFER_CHARS:
+            return buffer, ""
+
+        for end_group in HermesConversationEntity._SENTENCE_ENDS:
+            for end in end_group:
+                pos = buffer.find(end)
+                if pos != -1:
+                    sentence = buffer[: pos + len(end)]
+                    remaining = buffer[pos + len(end):]
+                    # If the sentence is just the end marker (empty content),
+                    # skip it and try the remaining buffer.
+                    stripped = sentence.strip()
+                    if not stripped or stripped in (".", "!", "?", "...", ":", ";"):
+                        # Recurse into the remaining buffer to find a real sentence
+                        inner_sentence, inner_remaining = (
+                            HermesConversationEntity._extract_first_sentence(
+                                remaining
+                            )
+                        )
+                        if inner_sentence:
+                            return sentence + inner_sentence, inner_remaining
+                        return sentence, remaining
+                    return sentence, remaining
+
+        return "", buffer
+
     async def _async_stream_assistant_response(
         self,
         messages: list[dict[str, str]],
         session_id: str | None = None,
     ) -> AsyncIterator[dict[str, str]]:
-        """Yield assistant deltas for Home Assistant's chat log."""
+        """Yield sentence-buffered assistant deltas for Home Assistant's chat log.
+
+        Accumulates streaming tokens into a buffer and yields one complete
+        sentence at a time.  Each yield triggers a separate Edge TTS call
+        via the HA pipeline, producing sequential sentence-by-sentence
+        speech instead of one long TTS call that get cut off.
+        """
         sent_role = False
         received_delta = False
+        buffer = ""
 
         try:
             async for delta in self.client.async_stream_message(
@@ -375,9 +429,19 @@ class HermesConversationEntity(
                     yield {"role": "assistant"}
                     sent_role = True
                 received_delta = True
-                yield {"content": delta}
+
+                buffer += delta
+                sentence, buffer = self._extract_first_sentence(buffer)
+                if sentence:
+                    # Strip leading whitespace from delta beginnings
+                    sentence = sentence.lstrip()
+                    if sentence:
+                        yield {"content": sentence}
+
         except HermesApiError as err:
             if received_delta:
+                if buffer.strip():
+                    yield {"content": buffer.strip()}
                 _LOGGER.warning(
                     "Streaming interrupted after partial response, keeping partial text: %s",
                     err,
@@ -390,6 +454,8 @@ class HermesConversationEntity(
             )
 
         if received_delta:
+            if buffer.strip():
+                yield {"content": buffer.strip()}
             return
 
         result = await self.client.async_send_message(
@@ -398,7 +464,19 @@ class HermesConversationEntity(
         if result.text:
             if not sent_role:
                 yield {"role": "assistant"}
-            yield {"content": result.text}
+            # Stream the fallback text through the same sentence-buffer
+            buffer = result.text
+            while buffer:
+                sentence, buffer = self._extract_first_sentence(buffer)
+                if sentence:
+                    sentence = sentence.lstrip()
+                    if sentence:
+                        yield {"content": sentence}
+                else:
+                    # No more sentence ends — flush remainder
+                    if buffer.strip():
+                        yield {"content": buffer.strip()}
+                    break
 
     async def _get_response(
         self,
