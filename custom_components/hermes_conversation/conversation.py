@@ -431,12 +431,12 @@ class HermesConversationEntity(
                 if sentence:
                     sentence = sentence.lstrip()
                     if sentence:
-                        yield {"role": "assistant", "content": sentence}
+                        yield {"role": "assistant", "content": sentence + "\n"}
 
         except HermesApiError as err:
             if received_delta:
                 if buffer.strip():
-                    yield {"role": "assistant", "content": buffer.strip()}
+                    yield {"role": "assistant", "content": buffer.strip() + "\n"}
                 _LOGGER.warning(
                     "Streaming interrupted after partial response, keeping partial text: %s",
                     err,
@@ -450,7 +450,7 @@ class HermesConversationEntity(
 
         if received_delta:
             if buffer.strip():
-                yield {"role": "assistant", "content": buffer.strip()}
+                yield {"role": "assistant", "content": buffer.strip() + "\n"}
             return
 
         result = await self.client.async_send_message(
@@ -464,10 +464,10 @@ class HermesConversationEntity(
                 if sentence:
                     sentence = sentence.lstrip()
                     if sentence:
-                        yield {"role": "assistant", "content": sentence}
+                        yield {"role": "assistant", "content": sentence + "\n"}
                 else:
                     if buffer.strip():
-                        yield {"role": "assistant", "content": buffer.strip()}
+                        yield {"role": "assistant", "content": buffer.strip() + "\n"}
                     break
 
     async def _get_response(
