@@ -411,11 +411,10 @@ class HermesConversationEntity(
         """Yield sentence-buffered assistant deltas for Home Assistant's chat log.
 
         Accumulates streaming tokens into a buffer and yields one complete
-        sentence at a time.  Each yield triggers a separate Edge TTS call
-        via the HA pipeline, producing sequential sentence-by-sentence
-        speech instead of one long TTS call that get cut off.
+        sentence at a time, each wrapped with its own assistant role marker.
+        This encourages the HA pipeline to treat each sentence as a separate
+        utterance rather than one continuous TTS stream.
         """
-        sent_role = False
         received_delta = False
         buffer = ""
 
@@ -425,23 +424,19 @@ class HermesConversationEntity(
             ):
                 if not delta:
                     continue
-                if not sent_role:
-                    yield {"role": "assistant"}
-                    sent_role = True
                 received_delta = True
 
                 buffer += delta
                 sentence, buffer = self._extract_first_sentence(buffer)
                 if sentence:
-                    # Strip leading whitespace from delta beginnings
                     sentence = sentence.lstrip()
                     if sentence:
-                        yield {"content": sentence}
+                        yield {"role": "assistant", "content": sentence}
 
         except HermesApiError as err:
             if received_delta:
                 if buffer.strip():
-                    yield {"content": buffer.strip()}
+                    yield {"role": "assistant", "content": buffer.strip()}
                 _LOGGER.warning(
                     "Streaming interrupted after partial response, keeping partial text: %s",
                     err,
@@ -455,15 +450,13 @@ class HermesConversationEntity(
 
         if received_delta:
             if buffer.strip():
-                yield {"content": buffer.strip()}
+                yield {"role": "assistant", "content": buffer.strip()}
             return
 
         result = await self.client.async_send_message(
             messages, session_id=session_id
         )
         if result.text:
-            if not sent_role:
-                yield {"role": "assistant"}
             # Stream the fallback text through the same sentence-buffer
             buffer = result.text
             while buffer:
@@ -471,11 +464,10 @@ class HermesConversationEntity(
                 if sentence:
                     sentence = sentence.lstrip()
                     if sentence:
-                        yield {"content": sentence}
+                        yield {"role": "assistant", "content": sentence}
                 else:
-                    # No more sentence ends — flush remainder
                     if buffer.strip():
-                        yield {"content": buffer.strip()}
+                        yield {"role": "assistant", "content": buffer.strip()}
                     break
 
     async def _get_response(
